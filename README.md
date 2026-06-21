@@ -1,5 +1,7 @@
 # Conduit Hybrid Automation Framework
 
+[![e2e](https://github.com/Qbuiba/conduit-hybrid-automation/actions/workflows/ci.yml/badge.svg)](https://github.com/Qbuiba/conduit-hybrid-automation/actions/workflows/ci.yml)
+
 A **hybrid (API + UI) Playwright + TypeScript** test framework for the
 [RealWorld "Conduit"](https://github.com/gothinkster/realworld) app. It demonstrates
 fast, parallel-safe, pipeline-stable end-to-end testing built around one core idea:
