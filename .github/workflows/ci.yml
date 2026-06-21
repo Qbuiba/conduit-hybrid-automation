@@ -1,0 +1,96 @@
+name: e2e
+
+# Runs the hybrid Playwright suite against a freshly-booted Conduit SUT.
+# GitHub-hosted Ubuntu runners ship Docker + Node, so nothing extra to install.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch: # lets you trigger it manually from the Actions tab
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    # Postgres as a service container (the runner has plenty of RAM, unlike the
+    # local 4 GB Docker VM, so a service container is simplest here).
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: conduit
+          POSTGRES_PASSWORD: conduit
+          POSTGRES_DB: conduit
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U conduit"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout test framework
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # --- Bring up the System Under Test (cloned fresh; not vendored) ---
+      - name: Clone Conduit SUT
+        run: git clone --depth 1 https://github.com/TonyMckes/conduit-realworld-example-app.git sut
+
+      - name: Configure SUT backend (point at the Postgres service)
+        run: |
+          cat > sut/backend/.env <<'EOF'
+          PORT=3001
+          JWT_KEY=ci_secret_key
+          DEV_DB_USERNAME=conduit
+          DEV_DB_PASSWORD=conduit
+          DEV_DB_NAME=conduit
+          DEV_DB_HOSTNAME=127.0.0.1
+          DEV_DB_DIALECT=postgres
+          EOF
+          # Coerce Sequelize's `logging` to a boolean (the upstream config passes a
+          # raw string, which crashes the DB connection — see ARCHITECTURE notes).
+          sed -i -E 's/logging: process\.env\.(DEV|TEST|PROD)_DB_LOGGING/logging: false/' sut/backend/config/config.js
+
+      - name: Install & start SUT (backend :3001 + frontend :3000)
+        working-directory: sut
+        run: |
+          npm install
+          nohup npm run dev > sut.log 2>&1 &
+
+      - name: Wait for SUT to be healthy
+        run: npx --yes wait-on -t 120000 http://localhost:3001/api/tags http://localhost:3000
+
+      # --- Run the suite ---
+      - name: Install framework dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright tests
+        run: npx playwright test
+        env:
+          CI: true
+
+      # --- Render a test summary onto the job's run page ---
+      - name: Write test summary
+        if: ${{ !cancelled() }}
+        run: node scripts/ci-summary.js
+
+      # --- Always publish the report + SUT logs for debugging ---
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+      - name: Dump SUT logs on failure
+        if: failure()
+        run: cat sut/sut.log || true

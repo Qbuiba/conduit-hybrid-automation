@@ -1,0 +1,27 @@
+{
+  "name": "conduit-framework",
+  "version": "0.1.0",
+  "description": "Conduit RealWorld hybrid (API + UI) Playwright automation framework",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:slow": "SLOWMO=800 playwright test --headed --workers=1",
+    "test:watch": "playwright test --ui",
+    "test:debug": "playwright test --debug",
+    "test:api": "playwright test --project=api",
+    "test:ui": "playwright test --project=chromium tests/ui",
+    "test:e2e": "playwright test --project=chromium tests/e2e",
+    "report": "playwright show-report",
+    "codegen": "playwright codegen http://localhost:3000",
+    "sut:up": "docker compose up -d --wait",
+    "sut:down": "docker compose down -v",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@types/node": "^25.8.0",
+    "typescript": "^5.7.0"
+  }
+}

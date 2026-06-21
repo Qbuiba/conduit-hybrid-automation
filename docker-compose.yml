@@ -1,0 +1,38 @@
+# SUT (System Under Test) — containerized Conduit app.
+#
+# ⚠ STUB — pending repo-layout decision (see ARCHITECTURE.md §6).
+# The TonyMckes app ships no Docker, so this compose file will:
+#   1. build/run its Express backend (API on :3001)
+#   2. build/run its React frontend (UI on :3000)
+#   3. run postgres for the backend
+#
+# Wired during the vertical-slice phase once the app source is checked out
+# (clone or submodule). Until then, `npm run sut:up` is a no-op placeholder.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: conduit
+      POSTGRES_PASSWORD: conduit
+      POSTGRES_DB: conduit
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U conduit"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # backend:
+  #   build: ./app/backend      # path set once app source is vendored in
+  #   environment:
+  #     DATABASE_URL: postgres://conduit:conduit@postgres:5432/conduit
+  #   ports: ["3001:3001"]
+  #   depends_on:
+  #     postgres: { condition: service_healthy }
+
+  # frontend:
+  #   build: ./app/frontend
+  #   ports: ["3000:3000"]
+  #   depends_on: [backend]
