@@ -12,6 +12,14 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    # The opt-in AI auto-debug step (claude-code-action) authenticates via OIDC and
+    # may comment on PRs, so it needs these permissions. The rest of the job is
+    # unaffected when the step is skipped.
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+
     # Postgres as a service container (the runner has plenty of RAM, unlike the
     # local 4 GB Docker VM, so a service container is simplest here).
     services:
