@@ -86,29 +86,31 @@ jobs:
 
       # --- On failure: AI self-healing debug pass (OPT-IN) ---
       # Skipped automatically unless an ANTHROPIC_API_KEY repo secret is set, so
-      # forks and key-less runs never break. The SUT is still up in this job, so
-      # Claude can reproduce, classify TEST-vs-SUT defects, and re-run. It writes a
-      # diagnostic report instead of pushing commits to main.
+      # forks and key-less runs never break. Runs the Claude Code CLI headlessly
+      # (just the API key — no GitHub App / OIDC needed). The SUT is still up in
+      # this job, so Claude can reproduce, classify TEST-vs-SUT defects, fix a
+      # broken test and re-run it, or write a bug report — and streams its
+      # findings to the job summary. `|| true` keeps the step from masking the
+      # real test-failure conclusion.
       - name: AI auto-debug failing tests
         if: ${{ failure() && env.HAVE_ANTHROPIC_KEY == 'true' }}
         env:
           HAVE_ANTHROPIC_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
-        uses: anthropics/claude-code-action@v1
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          claude_args: "--max-turns 20"
-          prompt: |
-            The Playwright suite failed in CI. Follow the documented process in
-            `.claude/commands/debug-failure.md` against the failures listed in
-            `test-results/triage.json`. The SUT is running locally in this job
-            (API at $API_BASE_URL, UI at $UI_BASE_URL).
-
-            Constraints for CI:
-            - Do NOT push commits or edit the cloned `sut/` app.
-            - Classify each failure as TEST-DEFECT, SUT-DEFECT, ENVIRONMENT, or FLAKY.
-            - For TEST-DEFECTs, propose the minimal patch and re-run that spec to prove it.
-            - For SUT-DEFECTs, write a bug report under `.debug-reports/`.
-            - Append a concise verdict table to $GITHUB_STEP_SUMMARY.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          echo "## 🤖 AI auto-debug" >> "$GITHUB_STEP_SUMMARY"
+          claude -p "Follow the process documented in .claude/commands/debug-failure.md \
+            against the failures listed in test-results/triage.json. The SUT is running \
+            locally in this CI job (API at \$API_BASE_URL, UI at \$UI_BASE_URL). \
+            Classify each failure as TEST-DEFECT, SUT-DEFECT, ENVIRONMENT, or FLAKY. \
+            For a TEST-DEFECT: apply the minimal fix and re-run that spec to prove it green. \
+            For a SUT-DEFECT: do NOT edit the cloned sut/ app — write a bug report under \
+            .debug-reports/ using the .github/ISSUE_TEMPLATE/sut-bug.md template, and \
+            annotate the spec test.fixme with the reason. End with a one-line verdict per failure." \
+            --max-turns 25 \
+            --permission-mode bypassPermissions \
+            --output-format text >> "$GITHUB_STEP_SUMMARY" 2>&1 || true
 
       # --- Render a test summary onto the job's run page ---
       - name: Write test summary

@@ -66,10 +66,12 @@ The [CI workflow](../.github/workflows/ci.yml) does two things on failure:
 1. **Always** runs `scripts/triage.mjs`, which appends a verdict (`SUT-DOWN` /
    `NEEDS-TRIAGE` / `FLAKY`) and a per-spec failure breakdown to the **job summary**, and
    uploads a `debug-bundle` artifact (triage JSON/MD + any `.debug-reports/`).
-2. **Opt-in** runs an AI debug pass via the official
-   [`anthropics/claude-code-action`](https://github.com/anthropics/claude-code-action),
-   which reproduces and classifies the failures against the still-running SUT, then writes
-   its diagnosis to the job summary and the artifact.
+2. **Opt-in** runs an AI debug pass with the Claude Code CLI headlessly
+   (`npm i -g @anthropic-ai/claude-code` → `claude -p … --permission-mode bypassPermissions`).
+   It reproduces and classifies the failures against the still-running SUT, fixes a test
+   defect and re-runs it (or writes a bug report for a SUT defect), and streams its
+   diagnosis to the job summary. Using the CLI directly means the only thing you need is
+   the API-key secret — **no GitHub App or OIDC setup**.
 
 ### Enabling the cloud AI pass
 
@@ -89,8 +91,12 @@ job-level `if:`):
   if: ${{ failure() && env.HAVE_ANTHROPIC_KEY == 'true' }}
   env:
     HAVE_ANTHROPIC_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
-  uses: anthropics/claude-code-action@v1
-  ...
+    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  run: |
+    npm install -g @anthropic-ai/claude-code
+    claude -p "…follow .claude/commands/debug-failure.md…" \
+      --max-turns 25 --permission-mode bypassPermissions \
+      --output-format text >> "$GITHUB_STEP_SUMMARY" 2>&1 || true
 ```
 
 In CI the loop is **read-only toward `main`**: it never pushes commits or edits the cloned

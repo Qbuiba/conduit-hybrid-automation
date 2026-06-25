@@ -39,20 +39,46 @@ features (all exercised by this suite):
 
 ## AI self-healing debug loop
 
-When a test fails, the framework runs a **deterministic triage loop** — reproduce →
-classify → act → verify — that decides whether the *test* or the *app* is at fault and
-acts accordingly:
+When a test fails, the framework doesn't just go red — it runs a **deterministic triage
+loop** (reproduce → classify → act → verify) that works out *who* is at fault and acts on
+it. It runs locally in Claude Code via the `/debug-failure` command, and in CI as an
+opt-in job. See [`docs/AI-DEBUG.md`](./docs/AI-DEBUG.md) for the full design.
 
-- **TEST defect** (wrong locator, bad assertion, missing wait) → fix the test, re-run to green.
-- **SUT defect** (a real app bug) → file a structured bug report and mark the spec
-  `test.fixme` with a link, **never** weakening the assertion to hide the bug.
-- **Environment** (SUT down) → report and stop, instead of misdiagnosing app logic.
+### How it decides who's to blame
 
-It leans on the hybrid oracle to classify mechanically: if the UI action "succeeded" but
-the **API read-back disagrees**, the app is buggy; if the API is correct but the assertion
-failed, the test is wrong. Runs locally in Claude Code via `/debug-failure`, and in CI as
-an opt-in job (`scripts/triage.mjs` always; the AI pass gated on an `ANTHROPIC_API_KEY`
-secret so forks never break). See [`docs/AI-DEBUG.md`](./docs/AI-DEBUG.md).
+It uses the framework's own hybrid oracle as the judge — **mechanically, not by guessing**:
+
+> The spec did **API setup → UI action → API verify**. So after a failure, the loop drives
+> the action again and re-reads the API. If the UI action *succeeded* but the **API
+> read-back disagrees**, the app is buggy. If the API is *correct* but the assertion still
+> failed, the **test** is wrong.
+
+### What it does about it
+
+| Verdict | What the loop does |
+|---|---|
+| **TEST defect** — wrong locator / bad assertion / missing `await` | **Auto-fixes the test** (minimal change: a role-based locator, a web-first assertion, an API read-back instead of a flaky UI-state check), then **re-runs that spec with `--repeat-each` until it's green and deterministic**, and finally re-runs the owning slice to prove no regression. |
+| **SUT defect** — a real bug in the app | **Never touches the app and never weakens the assertion.** It writes a structured bug report under `.debug-reports/` from the [`sut-bug` template](./.github/ISSUE_TEMPLATE/sut-bug.md) — including a browser-independent `curl` repro and the API-oracle evidence — then marks the spec `test.fixme('SUT bug: <link>')` so the suite **documents** the defect (stays green) instead of **hiding** it. |
+| **ENVIRONMENT** — SUT down | Reports it (API/UI/Postgres health) and stops, instead of misdiagnosing app logic. |
+| **FLAKY** — intermittent | Treated as a test defect: it finds the race (a missing `await` or a poll-free read-back) and stabilises it. |
+
+Every run leaves an audit trail in `.debug-reports/<spec>-<timestamp>.md` for human review;
+it reproduces before concluding and makes only minimal, idiomatic changes.
+
+### Running it
+
+- **Locally** (interactive, inside Claude Code): `/debug-failure` triages the last run, or
+  `/debug-failure <spec>` targets one. `npm run triage` produces just the failure bundle.
+- **In CI** ([`.github/workflows/ci.yml`](./.github/workflows/ci.yml)): on failure it
+  **always** runs `scripts/triage.mjs` (verdict + per-spec breakdown into the job summary,
+  uploaded as a `debug-bundle` artifact). The **AI pass is opt-in**: it only runs when an
+  `ANTHROPIC_API_KEY` repo secret is set, so forks and key-less runs skip it cleanly and CI
+  never breaks. Enable it with:
+  ```bash
+  gh secret set ANTHROPIC_API_KEY --repo <owner>/<repo>
+  ```
+  In CI the loop is read-only toward `main` (it diagnoses, fixes-and-proves in the runner,
+  and writes its report to the job summary — it does not push commits).
 
 ## Prerequisites
 
