@@ -77,6 +77,39 @@ jobs:
         env:
           CI: true
 
+      # --- On failure: collect a structured triage bundle (failures + SUT health) ---
+      # Heuristically classifies SUT-DOWN vs NEEDS-TRIAGE and writes it to the job
+      # summary. This is the input the AI debugger consumes below.
+      - name: Triage failures
+        if: failure()
+        run: node scripts/triage.mjs
+
+      # --- On failure: AI self-healing debug pass (OPT-IN) ---
+      # Skipped automatically unless an ANTHROPIC_API_KEY repo secret is set, so
+      # forks and key-less runs never break. The SUT is still up in this job, so
+      # Claude can reproduce, classify TEST-vs-SUT defects, and re-run. It writes a
+      # diagnostic report instead of pushing commits to main.
+      - name: AI auto-debug failing tests
+        if: ${{ failure() && env.HAVE_ANTHROPIC_KEY == 'true' }}
+        env:
+          HAVE_ANTHROPIC_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: "--max-turns 20"
+          prompt: |
+            The Playwright suite failed in CI. Follow the documented process in
+            `.claude/commands/debug-failure.md` against the failures listed in
+            `test-results/triage.json`. The SUT is running locally in this job
+            (API at $API_BASE_URL, UI at $UI_BASE_URL).
+
+            Constraints for CI:
+            - Do NOT push commits or edit the cloned `sut/` app.
+            - Classify each failure as TEST-DEFECT, SUT-DEFECT, ENVIRONMENT, or FLAKY.
+            - For TEST-DEFECTs, propose the minimal patch and re-run that spec to prove it.
+            - For SUT-DEFECTs, write a bug report under `.debug-reports/`.
+            - Append a concise verdict table to $GITHUB_STEP_SUMMARY.
+
       # --- Render a test summary onto the job's run page ---
       - name: Write test summary
         if: ${{ !cancelled() }}
@@ -89,6 +122,18 @@ jobs:
         with:
           name: playwright-report
           path: playwright-report/
+          retention-days: 14
+
+      - name: Upload triage + AI debug reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-bundle
+          path: |
+            test-results/triage.json
+            test-results/triage.md
+            .debug-reports/
+          if-no-files-found: ignore
           retention-days: 14
 
       - name: Dump SUT logs on failure

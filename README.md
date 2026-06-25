@@ -37,6 +37,23 @@ features (all exercised by this suite):
 - **Custom fixtures** (`fixtures/`) — services, pages, and reverse-order article teardown.
 - **30 tests** across pure-API, pure-UI, and hybrid E2E (incl. a full pure-UI user journey).
 
+## AI self-healing debug loop
+
+When a test fails, the framework runs a **deterministic triage loop** — reproduce →
+classify → act → verify — that decides whether the *test* or the *app* is at fault and
+acts accordingly:
+
+- **TEST defect** (wrong locator, bad assertion, missing wait) → fix the test, re-run to green.
+- **SUT defect** (a real app bug) → file a structured bug report and mark the spec
+  `test.fixme` with a link, **never** weakening the assertion to hide the bug.
+- **Environment** (SUT down) → report and stop, instead of misdiagnosing app logic.
+
+It leans on the hybrid oracle to classify mechanically: if the UI action "succeeded" but
+the **API read-back disagrees**, the app is buggy; if the API is correct but the assertion
+failed, the test is wrong. Runs locally in Claude Code via `/debug-failure`, and in CI as
+an opt-in job (`scripts/triage.mjs` always; the AI pass gated on an `ANTHROPIC_API_KEY`
+secret so forks never break). See [`docs/AI-DEBUG.md`](./docs/AI-DEBUG.md).
+
 ## Prerequisites
 
 - Node 20+
@@ -74,6 +91,7 @@ npm test
 | `npm run test:watch` | Playwright **UI Mode** — step through tests visually |
 | `npm run test:api` / `:ui` / `:e2e` | Run just that slice |
 | `npm run report` | Open the HTML report from the last run |
+| `npm run triage` | Collect a failure-triage bundle (failures + SUT health) |
 | `npm run codegen` | Record locators against the running app |
 
 ## CI

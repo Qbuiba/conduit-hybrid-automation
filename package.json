@@ -17,6 +17,7 @@
     "codegen": "playwright codegen http://localhost:3000",
     "sut:up": "docker compose up -d --wait",
     "sut:down": "docker compose down -v",
+    "triage": "node scripts/triage.mjs",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
